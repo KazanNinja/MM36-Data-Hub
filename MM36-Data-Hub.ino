@@ -19,6 +19,12 @@
 //Defines status LED pin
 #define StatusLED 35
 
+//Defines ADC pins for 5V > 3.3V and 12V > 3.3V 
+#define ADC_5V_5 3
+#define ADC_5V_6 4
+#define ADC_12V_1 5
+#define ADC_12V_2 6
+
 //CAN Recieving frame
 CanFrame rxFrame;
 
@@ -66,12 +72,12 @@ void setup() {
   pinMode(StatusLED, OUTPUT);
 
   //Sets 5V > 3.3V voltage divider pins as inputs
-  pinMode(3, INPUT);
-  pinMode(4, INPUT);
+  pinMode(ADC_5V_5, INPUT);
+  pinMode(ADC_5V_6, INPUT);
 
   //Sets 12V > 3.3V divider pins
-  pinMode(5, INPUT);
-  pinMode(6, INPUT);
+  pinMode(ADC_12V_1, INPUT);
+  pinMode(ADC_12V_2, INPUT);
 
   //Initialize ADS1115 library stuff
   if (!adc.init()) {
