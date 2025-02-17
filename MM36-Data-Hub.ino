@@ -1,4 +1,4 @@
-#include <ADS1115_WE.h> 
+#include <ADS1115_WE.h>
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
 #include <Wire.h>
@@ -8,9 +8,9 @@
 #define CAN_RX 33
 #define CAN_TX 34
 
-//Defins I2C addresses for ADS ADC and MPU IMU
+//Defines I2C addresses for ADS ADC and MPU IMU
 #define ADS1115_I2C_ADDRESS 0x48
-#define MPU6050_I2C_ADDRESS 0x69 //nice
+#define MPU6050_I2C_ADDRESS 0x69  //nice
 
 //Defines I2C pins on ESP
 #define I2C_SDA 13
@@ -65,8 +65,16 @@ void setup() {
   //Sets up StatusLED to be an output for diagnosis stuff
   pinMode(StatusLED, OUTPUT);
 
+  //Sets 5V > 3.3V voltage divider pins as inputs
+  pinMode(3, INPUT);
+  pinMode(4, INPUT);
+
+  //Sets 12V > 3.3V divider pins
+  pinMode(5, INPUT);
+  pinMode(6, INPUT);
+
   //Initialize ADS1115 library stuff
-  if(!adc.init()){
+  if (!adc.init()) {
     Serial.println("ADS1115 not connected!");
   }
 
@@ -83,7 +91,7 @@ void setup() {
   //Set IMU accelerometer measuring range to +/- 4G
   //Car will generally see around 1.5-1.8g in lateral accel (I think) with the occasional 2-2.4g or so
   mpu.setAccelerometerRange(MPU6050_RANGE_4_G);
-  
+
   //Set IMU gyro to have +/- 250deg/s range
   //Typical yaw rates of the vehicle do not exceed 100 deg/s
   //With the pitch and roll rates being sub 10 deg/s
@@ -97,35 +105,35 @@ void setup() {
   //Sets ADC voltage range of ADS1115
   //Measuring 5V sensors so max 6144 range is selected
   //Choices are 6144, 4096, 2048, 1024, 0512, 0256 mV
-  adc.setVoltageRange_mV(ADS1115_RANGE_6144); //comment line/change parameter to change range
+  adc.setVoltageRange_mV(ADS1115_RANGE_6144);  //comment line/change parameter to change range
 
   //Sets sampling rate of ADC
   //Possible SPS are 8, 16, 32, 64, 128, 250, 475, 860
   adc.setConvRate(ADS1115_128_SPS);
 
   //Sets ADC to measure continously as opposed to single shot measurements
-  adc.setMeasureMode(ADS1115_CONTINUOUS); //comment line/change parameter to change mode
+  adc.setMeasureMode(ADS1115_CONTINUOUS);  //comment line/change parameter to change mode
 
   //Setting up task for CAN bus stuffz, grabs data and stuff
   xTaskCreatePinnedToCore(
-    CAN_Task_Code, //Function to implement the task
-    "CAN Task",    //Name of the task
-    10000,         //Stack size in words
-    NULL,          //Task input parameter
-    0,             //Priority of the task
-    &CAN_Task,     //Task handle
-    0              //Core where the task should run
-  );    
+    CAN_Task_Code,  //Function to implement the task
+    "CAN Task",     //Name of the task
+    10000,          //Stack size in words
+    NULL,           //Task input parameter
+    0,              //Priority of the task
+    &CAN_Task,      //Task handle
+    0               //Core where the task should run
+  );
 
   //Setting up task for IMU and ADC stuff
   xTaskCreatePinnedToCore(
-    IMU_ADC_Code, //Function to implement the task
-    "IMU ADC Task",    //Name of the task
-    10000,         //Stack size in words
-    NULL,          //Task input parameter
-    1,             //Priority of the task
-    &IMU_ADC_Task,     //Task handle
-    1              //Core where the task should run
+    IMU_ADC_Code,    //Function to implement the task
+    "IMU ADC Task",  //Name of the task
+    10000,           //Stack size in words
+    NULL,            //Task input parameter
+    1,               //Priority of the task
+    &IMU_ADC_Task,   //Task handle
+    1                //Core where the task should run
   );
 
   //Delay for stuff
@@ -138,31 +146,30 @@ void setup() {
   ESP32Can.setSpeed(ESP32Can.convertSpeed(1000));
 
   // You can also just use .begin()..
-  if(ESP32Can.begin()) {
-      Serial.println("CAN bus started!");
-      digitalWrite(StatusLED, HIGH);
-      delay(75);
-      digitalWrite(StatusLED, LOW);
-      delay(75);
-      digitalWrite(StatusLED, HIGH);
-      delay(75);
-      digitalWrite(StatusLED, LOW);
-  } 
-  else {
-      Serial.println("CAN bus failed!");
-      digitalWrite(StatusLED, LOW);
-  }   
+  if (ESP32Can.begin()) {
+    Serial.println("CAN bus started!");
+    digitalWrite(StatusLED, HIGH);
+    delay(75);
+    digitalWrite(StatusLED, LOW);
+    delay(75);
+    digitalWrite(StatusLED, HIGH);
+    delay(75);
+    digitalWrite(StatusLED, LOW);
+  } else {
+    Serial.println("CAN bus failed!");
+    digitalWrite(StatusLED, LOW);
+  }
 }
 
 void loop() {
   //Do nuffin
 }
 
-void CAN_Task_Code(void *parameter){
+void CAN_Task_Code(void *parameter) {
   Serial.println("Running CAN Task");
 
-  while(true){
-    
+  while (true) {
+
     //Sets StatusLED off until CAN talk begins
     digitalWrite(StatusLED, LOW);
 
@@ -171,7 +178,7 @@ void CAN_Task_Code(void *parameter){
     uint32_t currentStamp = millis();
 
     //CAN TX-ing, sends data to the bus
-    if(currentStamp - lastStamp > 50) {
+    if (currentStamp - lastStamp > 50) {
       digitalWrite(StatusLED, HIGH);
       lastStamp = currentStamp;
 
@@ -183,9 +190,9 @@ void CAN_Task_Code(void *parameter){
   }
 }
 
-void IMU_ADC_Code(void *parameter){
+void IMU_ADC_Code(void *parameter) {
 
-  while(true){ 
+  while (true) {
     //Grabs MPU IMU sensor events
     sensors_event_t a, g, temp;
     mpu.getEvent(&a, &g, &temp);
@@ -211,7 +218,8 @@ void IMU_ADC_Code(void *parameter){
     adc2 = readChannel(ADS1115_COMP_2_GND);
     adc3 = readChannel(ADS1115_COMP_3_GND);
 
-    Serial.println(adc0);
+    //Serial.println(adc0);
+    Serial.println(analogRead(5));
 
     //Bit shift demo testing thing
     // uint8_t highByte = (gyroX >> 8) & 0xFF;
@@ -226,62 +234,61 @@ void IMU_ADC_Code(void *parameter){
 float readChannel(ADS1115_MUX channel) {
   float voltage = 0.0;
   adc.setCompareChannels(channel);
-  voltage = adc.getResult_mV(); // alternative: getResult_mV for Millivolt
+  voltage = adc.getResult_mV();  // alternative: getResult_mV for Millivolt
   return voltage;
 }
 
-void sendGPS(int frameID){
-    //GPS Stuff
+void sendGPS(int frameID) {
+  //GPS Stuff
 }
 
-void sendIMU_ADC(int frameID, int frameID2, int frameID3){
+void sendIMU_ADC(int frameID, int frameID2, int frameID3) {
 
   //First CAN frame that sends the accelerometer data in all 3-DOF
   //Sends X gyroscope data on last two bytes
   CanFrame IMUframe1 = { 0 };
-	IMUframe1.identifier = frameID;
-	IMUframe1.extd = 0;
-	IMUframe1.data_length_code = 8;
-	IMUframe1.data[0] = accelX & 0xFF;
+  IMUframe1.identifier = frameID;
+  IMUframe1.extd = 0;
+  IMUframe1.data_length_code = 8;
+  IMUframe1.data[0] = accelX & 0xFF;
   IMUframe1.data[1] = (accelX >> 8) & 0xFF;
-	IMUframe1.data[2] = accelY & 0xFF;
+  IMUframe1.data[2] = accelY & 0xFF;
   IMUframe1.data[3] = (accelY >> 8) & 0xFF;
-	IMUframe1.data[4] = accelZ & 0xFF; 
+  IMUframe1.data[4] = accelZ & 0xFF;
   IMUframe1.data[5] = (accelZ >> 8) & 0xFF;
-	IMUframe1.data[6] = gyroX & 0xFF;
+  IMUframe1.data[6] = gyroX & 0xFF;
   IMUframe1.data[7] = (gyroX >> 8) & 0xFF;
   ESP32Can.writeFrame(IMUframe1);
 
   //Second CAN frame that sends the rest of the gyroscope data (Y and Z)
   //Sends first two ADC values from AD1115 (Not voltage divider ADC)
   CanFrame IMU_ADC_Frame1 = { 0 };
-	IMU_ADC_Frame1.identifier = frameID2;
-	IMU_ADC_Frame1.extd = 0;
-	IMU_ADC_Frame1.data_length_code = 8;
-	IMU_ADC_Frame1.data[0] = gyroY & 0xFF;
+  IMU_ADC_Frame1.identifier = frameID2;
+  IMU_ADC_Frame1.extd = 0;
+  IMU_ADC_Frame1.data_length_code = 8;
+  IMU_ADC_Frame1.data[0] = gyroY & 0xFF;
   IMU_ADC_Frame1.data[1] = (gyroY >> 8) & 0xFF;
-	IMU_ADC_Frame1.data[2] = gyroZ & 0xFF;
+  IMU_ADC_Frame1.data[2] = gyroZ & 0xFF;
   IMU_ADC_Frame1.data[3] = (gyroZ >> 8) & 0xFF;
-	IMU_ADC_Frame1.data[4] = adc0 & 0xFF; 
+  IMU_ADC_Frame1.data[4] = adc0 & 0xFF;
   IMU_ADC_Frame1.data[5] = (adc0 >> 8) & 0xFF;
-	IMU_ADC_Frame1.data[6] = adc1 & 0xFF;
+  IMU_ADC_Frame1.data[6] = adc1 & 0xFF;
   IMU_ADC_Frame1.data[7] = (adc1 >> 8) & 0xFF;
   ESP32Can.writeFrame(IMU_ADC_Frame1);
 
   //Third CAN frame that sends rest of ADS1115 ADC data
   //Sends data from voltage divider ADCS
   CanFrame ADCFrame = { 0 };
-	ADCFrame.identifier = frameID3;
-	ADCFrame.extd = 0;
-	ADCFrame.data_length_code = 8;
-	ADCFrame.data[0] = adc2 & 0xFF;
+  ADCFrame.identifier = frameID3;
+  ADCFrame.extd = 0;
+  ADCFrame.data_length_code = 8;
+  ADCFrame.data[0] = adc2 & 0xFF;
   ADCFrame.data[1] = (adc2 >> 8) & 0xFF;
-	ADCFrame.data[2] = adc3 & 0xFF;
+  ADCFrame.data[2] = adc3 & 0xFF;
   ADCFrame.data[3] = (adc3 >> 8) & 0xFF;
-	ADCFrame.data[4] = 0; 
+  ADCFrame.data[4] = 0;
   ADCFrame.data[5] = 0;
-	ADCFrame.data[6] = 0;
+  ADCFrame.data[6] = 0;
   ADCFrame.data[7] = 0;
   ESP32Can.writeFrame(ADCFrame);
 }
-
