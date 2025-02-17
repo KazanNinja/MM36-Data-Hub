@@ -231,8 +231,9 @@ void IMU_ADC_Code(void *parameter) {
     adc2 = readChannel(ADS1115_COMP_2_GND);
     adc3 = readChannel(ADS1115_COMP_3_GND);
 
+    //Gets ADC value from 12V ADC input thingy, not finished
     adc_12v_1 = analogRead(ADC_12V_1);
-    adc_12V_2 = analodRead(ADC_12V_2);
+    adc_12v_2 = analogRead(ADC_12V_2);
 
     //Bit shift demo testing thing
     // uint8_t highByte = (gyroX >> 8) & 0xFF;
