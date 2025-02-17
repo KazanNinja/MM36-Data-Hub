@@ -56,6 +56,13 @@ int16_t adc1 = 0;
 int16_t adc2 = 0;
 int16_t adc3 = 0;
 
+//Sets up voltage divider adc int16_t
+//Currently, 5V voltage divider ADC are not used
+uint16_t adc_5v_4 = 0;
+uint16_t adc_5v_5 = 0;
+uint16_t adc_12v_1 = 0;
+uint16_t adc_12v_2 = 0;
+
 //Declares ADS and MPU objects and what not
 ADS1115_WE adc = ADS1115_WE(ADS1115_I2C_ADDRESS);
 Adafruit_MPU6050 mpu;
@@ -188,7 +195,7 @@ void CAN_Task_Code(void *parameter) {
       digitalWrite(StatusLED, HIGH);
       lastStamp = currentStamp;
 
-      sendIMU_ADC(0x7F7, 0x7F8, 0x7F9);
+      sendIMU_ADC(0x7F0, 0x7F3, 0x7F4);
     }
 
     //Delay to yield to other tasks
@@ -224,8 +231,8 @@ void IMU_ADC_Code(void *parameter) {
     adc2 = readChannel(ADS1115_COMP_2_GND);
     adc3 = readChannel(ADS1115_COMP_3_GND);
 
-    //Serial.println(adc0);
-    Serial.println(analogRead(5));
+    adc_12v_1 = analogRead(ADC_12V_1);
+    adc_12V_2 = analodRead(ADC_12V_2);
 
     //Bit shift demo testing thing
     // uint8_t highByte = (gyroX >> 8) & 0xFF;
@@ -292,9 +299,9 @@ void sendIMU_ADC(int frameID, int frameID2, int frameID3) {
   ADCFrame.data[1] = (adc2 >> 8) & 0xFF;
   ADCFrame.data[2] = adc3 & 0xFF;
   ADCFrame.data[3] = (adc3 >> 8) & 0xFF;
-  ADCFrame.data[4] = 0;
-  ADCFrame.data[5] = 0;
-  ADCFrame.data[6] = 0;
-  ADCFrame.data[7] = 0;
+  ADCFrame.data[4] = adc_12v_1 & 0xFF;
+  ADCFrame.data[5] = (adc_12v_1 >> 8) & 0xFF;
+  ADCFrame.data[6] = adc_12v_2 & 0xFF;
+  ADCFrame.data[7] = (adc_12v_2 >> 8) & 0xFF;
   ESP32Can.writeFrame(ADCFrame);
 }
