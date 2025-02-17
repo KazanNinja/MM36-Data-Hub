@@ -1,33 +1,65 @@
-#include<ADS1115_WE.h> 
+#include <ADS1115_WE.h> 
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
-#include <Adafruit_ADS1X15.h>
-#include<Wire.h>
-#define I2C_ADDRESS 0x48
+#include <Wire.h>
+#include <ESP32-TWAI-CAN.hpp>
 
+//CAN TX-RX Pins
+#define CAN_RX 33
+#define CAN_TX 34
+
+//Defins I2C addresses for ADS ADC and MPU IMU
+#define ADS1115_I2C_ADDRESS 0x48
+#define MPU6050_I2C_ADDRESS 0x69 //nice
+
+//Defines I2C pins on ESP
 #define I2C_SDA 13
 #define I2C_SCL 12
 
+//Sets accel and gyro float variables
+//Because the board is mounted 90 degrees against the firewall
+//From driver pov
+//X is up (+) & down (-), ground to sky
+//Y is left (+) to right (-)
+//Z is front (+) to back (-)
+float accelX = 0.0;
+float accelY = 0.0;
+float accelZ = 0.0;
 
+//Similar to accels, described from sitting in the drivers seat
+//X - yaw, turning right (+) to left (-)
+//Y - pitch, nose up (+) nose down (-)
+//Z - roll, roll right (-) roll left (+)
+float gyroX = 0.0;
+float gyroY = 0.0;
+float gyroZ = 0.0;
 
-/* There are several ways to create your ADS1115_WE object:
- * ADS1115_WE adc = ADS1115_WE(); -> uses Wire / I2C Address = 0x48
- * ADS1115_WE adc = ADS1115_WE(I2C_ADDRESS); -> uses Wire / I2C_ADDRESS
- * ADS1115_WE adc = ADS1115_WE(&Wire); -> you can pass any TwoWire object / I2C Address = 0x48
- * ADS1115_WE adc = ADS1115_WE(&Wire, I2C_ADDRESS); -> all together
- */
-ADS1115_WE adc = ADS1115_WE(I2C_ADDRESS);
+//Sets up ADC floats
+float adc0 = 0.0;
+float adc1 = 0.0;
+float adc2 = 0.0;
+float adc3 = 0.0;
+
+//Declares ADS and MPU objects and what not
+ADS1115_WE adc = ADS1115_WE(ADS1115_I2C_ADDRESS);
 Adafruit_MPU6050 mpu;
 
 void setup() {
+
+  //Begins I2C communication on corresponding pins
   Wire.begin(I2C_SDA, I2C_SCL);
+
+  //Begins serial comms
   Serial.begin(115200);
+
+  //Initialize ADS1115 library stuff
   if(!adc.init()){
     Serial.println("ADS1115 not connected!");
   }
 
-  // Try to initialize!
-  if (!mpu.begin(0x69, &Wire, 0)) {
+  //Initialize MPU6050 on given address and stuff
+  //Address is 0x69 because the MPU6050 ADDR pin is pulled high
+  if (!mpu.begin(MPU6050_I2C_ADDRESS, &Wire, 0)) {
     Serial.println("Failed to find MPU6050 chip");
     while (1) {
       delay(10);
@@ -35,223 +67,62 @@ void setup() {
   }
   Serial.println("MPU6050 Found!");
 
+  //Set IMU accelerometer measuring range to +/- 4G
+  //Car will generally see around 1.5-1.8g in lateral accel (I think) with the occasional 2-2.4g or so
   mpu.setAccelerometerRange(MPU6050_RANGE_4_G);
-  Serial.print("Accelerometer range set to: ");
-  switch (mpu.getAccelerometerRange()) {
-    case MPU6050_RANGE_2_G:
-      Serial.println("+-2G");
-      break;
-    case MPU6050_RANGE_4_G:
-      Serial.println("+-4G");
-      break;
-    case MPU6050_RANGE_8_G:
-      Serial.println("+-8G");
-      break;
-    case MPU6050_RANGE_16_G:
-      Serial.println("+-16G");
-      break;
-  }
-  mpu.setGyroRange(MPU6050_RANGE_500_DEG);
-  Serial.print("Gyro range set to: ");
-  switch (mpu.getGyroRange()) {
-    case MPU6050_RANGE_250_DEG:
-      Serial.println("+- 250 deg/s");
-      break;
-    case MPU6050_RANGE_500_DEG:
-      Serial.println("+- 500 deg/s");
-      break;
-    case MPU6050_RANGE_1000_DEG:
-      Serial.println("+- 1000 deg/s");
-      break;
-    case MPU6050_RANGE_2000_DEG:
-      Serial.println("+- 2000 deg/s");
-      break;
-  }
+  
+  //Set IMU gyro to have +/- 250deg/s range
+  //Typical yaw rates of the vehicle do not exceed 100 deg/s
+  //With the pitch and roll rates being sub 10 deg/s
+  mpu.setGyroRange(MPU6050_RANGE_250_DEG);
 
+  //TBD
+  //Sets low pass filter, available freqs are 260, 184, 94, 44, 21, 10, 5
+  //In hertz
   mpu.setFilterBandwidth(MPU6050_BAND_44_HZ);
-  Serial.print("Filter bandwidth set to: ");
-  switch (mpu.getFilterBandwidth()) {
-    case MPU6050_BAND_260_HZ:
-      Serial.println("260 Hz");
-      break;
-    case MPU6050_BAND_184_HZ:
-      Serial.println("184 Hz");
-      break;
-    case MPU6050_BAND_94_HZ:
-      Serial.println("94 Hz");
-      break;
-    case MPU6050_BAND_44_HZ:
-      Serial.println("44 Hz");
-      break;
-    case MPU6050_BAND_21_HZ:
-      Serial.println("21 Hz");
-      break;
-    case MPU6050_BAND_10_HZ:
-      Serial.println("10 Hz");
-      break;
-    case MPU6050_BAND_5_HZ:
-      Serial.println("5 Hz");
-      break;
-  }
 
-
-  /* Set the voltage range of the ADC to adjust the gain
-   * Please note that you must not apply more than VDD + 0.3V to the input pins!
-   * 
-   * ADS1115_RANGE_6144  ->  +/- 6144 mV
-   * ADS1115_RANGE_4096  ->  +/- 4096 mV
-   * ADS1115_RANGE_2048  ->  +/- 2048 mV (default)
-   * ADS1115_RANGE_1024  ->  +/- 1024 mV
-   * ADS1115_RANGE_0512  ->  +/- 512 mV
-   * ADS1115_RANGE_0256  ->  +/- 256 mV
-   */
+  //Sets ADC voltage range of ADS1115
+  //Measuring 5V sensors so max 6144 range is selected
+  //Choices are 6144, 4096, 2048, 1024, 0512, 0256 mV
   adc.setVoltageRange_mV(ADS1115_RANGE_6144); //comment line/change parameter to change range
 
-  /* Set the inputs to be compared
-   *  
-   *  ADS1115_COMP_0_1    ->  compares 0 with 1 (default)
-   *  ADS1115_COMP_0_3    ->  compares 0 with 3
-   *  ADS1115_COMP_1_3    ->  compares 1 with 3
-   *  ADS1115_COMP_2_3    ->  compares 2 with 3
-   *  ADS1115_COMP_0_GND  ->  compares 0 with GND
-   *  ADS1115_COMP_1_GND  ->  compares 1 with GND
-   *  ADS1115_COMP_2_GND  ->  compares 2 with GND
-   *  ADS1115_COMP_3_GND  ->  compares 3 with GND
-   */
-  adc.setCompareChannels(ADS1115_COMP_0_GND); //comment line/change parameter to change channel
+  //Sets sampling rate of ADC
+  //Possible SPS are 8, 16, 32, 64, 128, 250, 475, 860
+  adc.setConvRate(ADS1115_128_SPS);
 
-  /* Set number of conversions after which the alert pin asserts
-   * - or you can disable the alert 
-   *  
-   *  ADS1115_ASSERT_AFTER_1  -> after 1 conversion
-   *  ADS1115_ASSERT_AFTER_2  -> after 2 conversions
-   *  ADS1115_ASSERT_AFTER_4  -> after 4 conversions
-   *  ADS1115_DISABLE_ALERT   -> disable comparator / alert pin (default) 
-   */
-  //adc.setAlertPinMode(ADS1115_ASSERT_AFTER_1); //uncomment if you want to change the default
-
-  /* Set the conversion rate in SPS (samples per second)
-   * Options should be self-explaining: 
-   * 
-   *  ADS1115_8_SPS 
-   *  ADS1115_16_SPS  
-   *  ADS1115_32_SPS 
-   *  ADS1115_64_SPS  
-   *  ADS1115_128_SPS (default)
-   *  ADS1115_250_SPS 
-   *  ADS1115_475_SPS 
-   *  ADS1115_860_SPS 
-   */
-  // adc.setConvRate(ADS1115_8_SPS); //uncomment if you want to change the default
-
-  /* Set continuous or single shot mode:
-   * 
-   *  ADS1115_CONTINUOUS  ->  continuous mode
-   *  ADS1115_SINGLE     ->  single shot mode (default)
-   */
+  //Sets ADC to measure continously as opposed to single shot measurements
   adc.setMeasureMode(ADS1115_CONTINUOUS); //comment line/change parameter to change mode
-
-   /* Choose maximum limit or maximum and minimum alert limit (window) in Volt - alert pin will 
-   *  assert when measured values are beyond the maximum limit or outside the window 
-   *  Upper limit first: setAlertLimit_V(MODE, maximum, minimum)
-   *  In max limit mode the minimum value is the limit where the alert pin assertion will be  
-   *  cleared (if not latched)  
-   * 
-   *  ADS1115_MAX_LIMIT
-   *  ADS1115_WINDOW
-   * 
-   */
-  //adc.setAlertModeAndLimit_V(ADS1115_MAX_LIMIT, 3.0, 1.5); //uncomment if you want to change the default
-  
-  /* Enable or disable latch. If latch is enabled the alert pin will assert until the
-   * conversion register is read (getResult functions). If disabled the alert pin assertion will be
-   * cleared with next value within limits. 
-   *  
-   *  ADS1115_LATCH_DISABLED (default)
-   *  ADS1115_LATCH_ENABLED
-   */
-  //adc.setAlertLatch(ADS1115_LATCH_ENABLED); //uncomment if you want to change the default
-
-  /* Sets the alert pin polarity if active:
-   *  
-   * ADS1115_ACT_LOW  ->  active low (default)   
-   * ADS1115_ACT_HIGH ->  active high
-   */
-  //adc.setAlertPol(ADS1115_ACT_LOW); //uncomment if you want to change the default
- 
-  /* With this function the alert pin will assert, when a conversion is ready.
-   * In order to deactivate, use the setAlertLimit_V function  
-   */
-  //adc.setAlertPinToConversionReady(); //uncomment if you want to change the default
-
-  Serial.println("ADS1115 Example Sketch - Continuous Mode");
-  Serial.println("All values in volts");
-  Serial.println();
-
-  Serial.println("");
-  delay(100);
 }
 
-  /* If you change the compare channels you can immediately read values from the conversion 
-   * register, although they might belong to the former channel if no precautions are taken. 
-   * It takes about the time needed for two conversions to get the correct data. In single 
-   * shot mode you can use the isBusy() function to wait for data from the new channel. This 
-   * does not work in continuous mode. 
-   * To solve this issue the library adds a delay after change of channels if you are in contunuous
-   * mode. The length of the delay is adjusted to the conversion rate. But be aware that the output 
-   * rate will be much lower that the conversion rate if you change channels frequently. 
-   */
-
 void loop() {
-  /* Get new sensor events with the readings */
+  //Grabs MPU IMU sensor events
   sensors_event_t a, g, temp;
   mpu.getEvent(&a, &g, &temp);
 
-  /* Print out the values */
-  Serial.print("Acceleration X: ");
-  Serial.print(a.acceleration.x + 0.19);
-  Serial.print(", Y: ");
-  Serial.print(a.acceleration.y - 0.19);
-  Serial.print(", Z: ");
-  Serial.print(a.acceleration.z + 0.19);
-  Serial.println(" m/s^2");
+  //Acceleration is given in m/s^2
+  //Gets converted to g with division
+  //Added offsets based on rough flat surface calibration that idk if is even remotely correct
+  accelX = (a.acceleration.x - 0.27 ) / 9.81;
+  accelY = (a.acceleration.y - 0.09) / 9.81;
+  accelZ = (a.acceleration.z + 0.89) / 9.81;
 
-  Serial.print("Rotation X: ");
-  Serial.print(g.gyro.x);
-  Serial.print(", Y: ");
-  Serial.print(g.gyro.y);
-  Serial.print(", Z: ");
-  Serial.print(g.gyro.z);
-  Serial.println(" rad/s");
+  //Gyro values give in rad/s
+  //Did same rough flat surface calc thing
+  gyroX = (g.gyro.x + 0.06);
+  gyroY = (g.gyro.y + 0.03);
+  gyroZ = (g.gyro.z + 0.05);
 
-  //Serial.print("Temperature: ");
-  //Serial.print(temp.temperature);
-  //Serial.println(" degC");
+  //Gets millivolt reading of ADS1115 ADCs
+  adc0 = readChannel(ADS1115_COMP_0_GND);
+  adc1 = readChannel(ADS1115_COMP_1_GND);
+  adc2 = readChannel(ADS1115_COMP_2_GND);
+  adc3 = readChannel(ADS1115_COMP_3_GND);
 
-  float voltage = 0.0;
-
-  Serial.print("0: ");
-  voltage = readChannel(ADS1115_COMP_0_GND);
-  Serial.print(voltage);
-
-  Serial.print(",   1: ");
-  voltage = readChannel(ADS1115_COMP_1_GND);
-  Serial.print(voltage);
-  
-  Serial.print(",   2: ");
-  voltage = readChannel(ADS1115_COMP_2_GND);
-  Serial.print(voltage);
-
-  Serial.print(",   3: ");
-  voltage = readChannel(ADS1115_COMP_3_GND);
-  Serial.println(voltage);
-
-  delay(10);
 }
 
 float readChannel(ADS1115_MUX channel) {
   float voltage = 0.0;
   adc.setCompareChannels(channel);
-  voltage = adc.getResult_V(); // alternative: getResult_mV for Millivolt
+  voltage = adc.getResult_mV(); // alternative: getResult_mV for Millivolt
   return voltage;
 }
