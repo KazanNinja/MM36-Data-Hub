@@ -5,8 +5,8 @@
 #include <ESP32-TWAI-CAN.hpp>
 
 //CAN TX-RX Pins
-#define CAN_RX 33
-#define CAN_TX 34
+#define CAN_RX 1
+#define CAN_TX 2
 
 //Defines I2C addresses for ADS ADC and MPU IMU
 #define ADS1115_I2C_ADDRESS 0x48
@@ -131,18 +131,18 @@ void setup() {
   xTaskCreatePinnedToCore(
     CAN_Task_Code,  //Function to implement the task
     "CAN Task",     //Name of the task
-    10000,          //Stack size in words
+    4096,          //Stack size in words
     NULL,           //Task input parameter
     0,              //Priority of the task
     &CAN_Task,      //Task handle
-    0               //Core where the task should run
+    1               //Core where the task should run
   );
 
   //Setting up task for IMU and ADC stuff
   xTaskCreatePinnedToCore(
     IMU_ADC_Code,    //Function to implement the task
     "IMU ADC Task",  //Name of the task
-    10000,           //Stack size in words
+    4096,           //Stack size in words
     NULL,            //Task input parameter
     1,               //Priority of the task
     &IMU_ADC_Task,   //Task handle
@@ -175,13 +175,15 @@ void setup() {
 }
 
 void loop() {
+  vTaskDelete(NULL);
   //Do nuffin
 }
 
 void CAN_Task_Code(void *parameter) {
-  Serial.println("Running CAN Task");
+  //Serial.println("Running CAN Task");
 
   while (true) {
+    //Serial.println("Starting CAN");
 
     //Sets StatusLED off until CAN talk begins
     digitalWrite(StatusLED, LOW);
@@ -217,6 +219,8 @@ void IMU_ADC_Code(void *parameter) {
     accelX = ((a.acceleration.x - 0.27) / 9.81) * 1000;
     accelY = ((a.acceleration.y - 0.09) / 9.81) * 1000;
     accelZ = ((a.acceleration.z + 0.89) / 9.81) * 1000;
+
+    Serial.println(accelX);
 
     //Gyro values give in rad/s
     //Did same rough flat surface calc thing
@@ -264,12 +268,12 @@ void sendIMU_ADC(int frameID, int frameID2, int frameID3) {
   IMUframe1.identifier = frameID;
   IMUframe1.extd = 0;
   IMUframe1.data_length_code = 8;
-  IMUframe1.data[0] = accelX & 0xFF;
-  IMUframe1.data[1] = (accelX >> 8) & 0xFF;
-  IMUframe1.data[2] = accelY & 0xFF;
-  IMUframe1.data[3] = (accelY >> 8) & 0xFF;
-  IMUframe1.data[4] = accelZ & 0xFF;
-  IMUframe1.data[5] = (accelZ >> 8) & 0xFF;
+  IMUframe1.data[0] = (accelX >> 8) & 0xFF;
+  IMUframe1.data[1] = accelX & 0xFF; 
+  IMUframe1.data[2] = (accelY >> 8) & 0xFF;
+  IMUframe1.data[3] = accelY & 0xFF;
+  IMUframe1.data[4] = (accelZ >> 8) & 0xFF;
+  IMUframe1.data[5] = accelZ & 0xFF;
   IMUframe1.data[6] = gyroX & 0xFF;
   IMUframe1.data[7] = (gyroX >> 8) & 0xFF;
   ESP32Can.writeFrame(IMUframe1);
