@@ -85,6 +85,7 @@ int e_speed = 0;
 int throttle = 0;
 int brake = 0;
 int gear = 0;
+int lapTime = 0;
 float temp = 0;
 
 // MAC address of the receiver (replace with the actual MAC address of your receiver)
@@ -216,7 +217,7 @@ void setup() {
   //TBD
   //Sets low pass filter, available freqs are 260, 184, 94, 44, 21, 10, 5
   //In hertz
-  mpu.setFilterBandwidth(MPU6050_BAND_260_HZ);
+  mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
 
   //Sets ADC voltage range of ADS1115
   //Measuring 5V sensors so max 6144 range is selected
@@ -258,16 +259,16 @@ void setup() {
     "GPS Task",  //Name of the task
     4096,        //Stack size in words
     NULL,        //Task input parameter
-    1,           //Priority of the task
+    2,           //Priority of the task
     &GPS_Task,   //Task handle
     1            //Core where the task should run
   );
 
-  xTaskCreate(addMessageToQueueTask, "addMessageToQueueTask", 4096, NULL, 1, NULL);
-  xTaskCreate(sendMessageFromQueueTask, "sendMessageFromQueueTask", 4096, NULL, 1, NULL);
+  xTaskCreate(addMessageToQueueTask, "addMessageToQueueTask", 4096, NULL, 3, NULL);
+  xTaskCreate(sendMessageFromQueueTask, "sendMessageFromQueueTask", 4096, NULL, 4, NULL);
 
   //Delay for stuff
-  delay(200);
+  // delay(200);
 
   //CAN setup
   ESP32Can.setPins(CAN_TX, CAN_RX);
@@ -308,7 +309,7 @@ void CAN_Task_Code(void *parameter) {
     uint32_t currentStamp = millis();
 
     //CAN TX-ing, sends data to the bus
-    if (currentStamp - lastStamp > 50) {
+    if (currentStamp - lastStamp > 40) {
       digitalWrite(StatusLED, HIGH);
       lastStamp = currentStamp;
 
@@ -321,8 +322,8 @@ void CAN_Task_Code(void *parameter) {
       //Vehicle Speed CAN Frame
       //v_speed = 0;
       if (rxFrame.identifier == 0x648) {
-        byte vSpeedLow = rxFrame.data[1];
-        byte vSpeedHigh = rxFrame.data[2];
+        byte vSpeedLow = rxFrame.data[2];
+        byte vSpeedHigh = rxFrame.data[3];
         v_speed = (vSpeedLow << 8) + vSpeedHigh;
       }
 
@@ -361,6 +362,14 @@ void CAN_Task_Code(void *parameter) {
         temp = rxFrame.data[0] - 40;
         temp = temp * 1.8 + 32;
       }
+      
+      //Lap Time
+      if (rxFrame.identifier == 0x65B){
+          byte lapLow = rxFrame.data[0];
+          byte lapHigh = rxFrame.data[1];
+          lapTime = (lapLow << 8) + lapHigh;
+          //Serial.println(lapTime);
+      }
     }
 
     //Delay to yield to other tasks
@@ -390,25 +399,15 @@ void IMU_ADC_Code(void *parameter) {
     gyroY = (g.gyro.y + 0.03) * 100;
     gyroZ = (g.gyro.z + 0.05) * 100;
 
-    //Serial.println(gyroY);
-
     //Gets millivolt reading of ADS1115 ADCs
     adc0 = readChannel(ADS1115_COMP_0_GND);
     adc1 = readChannel(ADS1115_COMP_1_GND);
     adc2 = readChannel(ADS1115_COMP_2_GND);
     adc3 = readChannel(ADS1115_COMP_3_GND);
 
-    //Serial.println(adc0);
-
     //Gets ADC value from 12V ADC input thingy, not finished
     adc_12v_1 = analogRead(ADC_12V_1);
     adc_12v_2 = analogRead(ADC_12V_2);
-
-    //Bit shift demo testing thing
-    // uint8_t highByte = (gyroX >> 8) & 0xFF;
-    // uint8_t lowByte = gyroX & 0xFF;
-    // gyroX = (highByte << 8 | lowByte);
-    // Serial.println(gyroX);
 
     vTaskDelay(1);
   }
@@ -595,7 +594,7 @@ void sendIMU_ADC(int frameID, int frameID2, int frameID3) {
   IMUframe1.data[5] = accelZ & 0xFF;
   IMUframe1.data[6] = (gyroX >> 8) & 0xFF;
   IMUframe1.data[7] = gyroX & 0xFF;
-  ESP32Can.writeFrame(IMUframe1);
+  
 
   //Second CAN frame that sends the rest of the gyroscope data (Y and Z)
   //Sends first two ADC values from AD1115 (Not voltage divider ADC)
@@ -611,7 +610,7 @@ void sendIMU_ADC(int frameID, int frameID2, int frameID3) {
   IMU_ADC_Frame1.data[5] = adc0 & 0xFF;
   IMU_ADC_Frame1.data[6] = (adc1 >> 8) & 0xFF;
   IMU_ADC_Frame1.data[7] = adc1 & 0xFF;
-  ESP32Can.writeFrame(IMU_ADC_Frame1);
+  
 
   //Third CAN frame that sends rest of ADS1115 ADC data
   //Sends data from voltage divider ADCS
@@ -627,6 +626,9 @@ void sendIMU_ADC(int frameID, int frameID2, int frameID3) {
   ADCFrame.data[5] = adc_12v_1 & 0xFF;
   ADCFrame.data[6] = (adc_12v_2 >> 8) & 0xFF;
   ADCFrame.data[7] = adc_12v_2 & 0xFF;
+
+  ESP32Can.writeFrame(IMUframe1);
+  ESP32Can.writeFrame(IMU_ADC_Frame1);
   ESP32Can.writeFrame(ADCFrame);
 }
 
@@ -639,15 +641,15 @@ void addMessageToQueueTask(void *pvParameters) {
     unsigned long time = millis();
 
     // Format the message with the timestamp, temperature, and humidity
-    snprintf(localMessage, sizeof(localMessage), "time:%.3f|v_speed:%d|e_speed:%d|throttle:%d|brake:%d|gear:%d|temp:%.1f|lat:%.6f|long:%.6f", (double)time / 1000, v_speed, e_speed, throttle, brake, gear, temp, ((double) latitude)/10000000, ((double) longitude)/10000000);
+    snprintf(localMessage, sizeof(localMessage), "time:%.3f|v_speed:%d|e_speed:%d|throttle:%d|brake:%d|gear:%d|temp:%.1f|lat:%.6f|long:%.6f|lp:%d", (double)time / 1000, v_speed, e_speed, throttle, brake, gear, temp, ((double) latitude)/10000000, ((double) longitude)/10000000, lapTime);
 
     // Add the message to the queue
     if (xQueueSend(messageQueue, localMessage, portMAX_DELAY) != pdPASS) {
       Serial.println("Failed to add message to queue");
     }
 
-    // Delay for 200ms
-    vTaskDelay(200 / portTICK_PERIOD_MS);
+    // Delay for 100ms
+    vTaskDelay(100 / portTICK_PERIOD_MS);
   }
 }
 
