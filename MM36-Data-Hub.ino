@@ -45,6 +45,7 @@ CanFrame gpsFrame3;
 
 //Defining Tasks
 TaskHandle_t CAN_Task;
+TaskHandle_t CAN_Send_Task;
 TaskHandle_t IMU_ADC_Task;
 TaskHandle_t ADC_Task;
 TaskHandle_t GPS_Task;
@@ -130,6 +131,8 @@ uint8_t SIV;
 int8_t validPosition;
 uint8_t fixType;
 bool getFixOK;
+
+int GPSCOUNT = 0;
 
 // Define a buffer to hold task info
 char taskListBuffer[2048];  // Buffer to hold task information (increase if needed)
@@ -289,6 +292,17 @@ void setup() {
     1               //Core where the task should run
   );
 
+  //Setting up task for CAN bus stuffz, grabs data and stuff
+  xTaskCreatePinnedToCore(
+    CAN_Send_Task_Code,  //Function to implement the task
+    "CAN Send Task",     //Name of the task
+    4096,                //Stack size in words
+    NULL,                //Task input parameter
+    19,                  //Priority of the task
+    &CAN_Send_Task,      //,      //Task handle
+    1                    //Core where the task should run
+  );
+
   // // //Setting up task for IMU and ADC stuff
   xTaskCreatePinnedToCore(
     IMU__ADC_Code,  //Function to implement the task
@@ -317,13 +331,13 @@ void setup() {
     "GPS Task",  //Name of the task
     8192,        //Stack size in words
     NULL,        //Task input parameter
-    16,          //Priority of the task
+    21,          //Priority of the task
     &GPS_Task,   //Task handle
     1            //Core where the task should run
   );
 
-  xTaskCreate(addMessageToQueueTask, "addMessageToQueueTask", 4096, NULL, 3, NULL);
-  xTaskCreate(sendMessageFromQueueTask, "sendMessageFromQueueTask", 4096, NULL, 4, NULL);
+  // xTaskCreate(addMessageToQueueTask, "addMessageToQueueTask", 4096, NULL, 3, NULL);
+  // xTaskCreate(sendMessageFromQueueTask, "sendMessageFromQueueTask", 4096, NULL, 4, NULL);
 
   //Delay for stuff
   delay(1000);
@@ -362,10 +376,10 @@ void CAN_Task_Code(void *parameter) {
 
     //CAN TX-ing, sends dash button states
     // if (currentStamp - lastStamp > 20) {
-    sendIMU_ADC(0x7F0, 0x7F3, 0x7F4);  //Runs function to set IMU data into CAN frame and write frames
-                                       //   //Serial.print("Sending CAN at ");
-                                       //   //Serial.println(micros());
-    sendGPS();                         //Runs function to set GPS data into CAN frame and write frames
+    //sendIMU_ADC(0x7F0, 0x7F3, 0x7F4);  //Runs function to set IMU data into CAN frame and write frames
+    //   //Serial.print("Sending CAN at ");
+    //   //Serial.println(micros());
+    //sendGPS();                         //Runs function to set GPS data into CAN frame and write frames
     //   //digitalWrite(StatusLED, LOW);
     // }
 
@@ -382,14 +396,14 @@ void CAN_Task_Code(void *parameter) {
       }
 
       //Coolant CAN Frame
-      if (rxFrame.identifier == 0x649) {
+      else if (rxFrame.identifier == 0x649) {
         temp = rxFrame.data[0] - 40;
         temp = temp * 1.8 + 32;
         //Serial.println(temp);
       }
 
       //Brake CAN Frame
-      if (rxFrame.identifier == 0x655) {
+      else if (rxFrame.identifier == 0x655) {
         byte brakeLow = rxFrame.data[0];
         byte brakeHigh = rxFrame.data[1];
         brake = (brakeLow << 8) + brakeHigh;
@@ -398,7 +412,7 @@ void CAN_Task_Code(void *parameter) {
       }
 
       //Engine Speed CAN Frame
-      if (rxFrame.identifier == 0x640) {
+      else if (rxFrame.identifier == 0x640) {
         byte rpmLow = rxFrame.data[0];
         byte rpmHigh = rxFrame.data[1];
         e_speed = (rpmLow << 8) + rpmHigh;
@@ -416,12 +430,12 @@ void CAN_Task_Code(void *parameter) {
       // }
 
       //Gear position CAN Frame
-      if (rxFrame.identifier == 0x64D) {
+      else if (rxFrame.identifier == 0x64D) {
         gear = rxFrame.data[6] & 0b00001111;
       }
 
       //Lap Time
-      if (rxFrame.identifier == 0x65B) {
+      else if (rxFrame.identifier == 0x65B) {
         byte lapLow = rxFrame.data[0];
         byte lapHigh = rxFrame.data[1];
         lapTime = (lapLow << 8) + lapHigh;
@@ -436,7 +450,29 @@ void CAN_Task_Code(void *parameter) {
     //Serial.println(timeTaken);
     //Delay to yield to other tasks
     //vTaskDelayUntil(&xLastWakeTime, xFrequency);
-    vTaskDelay(1);
+    vTaskDelay(1 / portTICK_PERIOD_MS);
+  }
+}
+
+void CAN_Send_Task_Code(void *parameter) {
+
+  TickType_t xLastWakeTime;
+  const TickType_t xFrequency = 20;
+
+  // Initialise the xLastWakeTime variable with the current time.
+  xLastWakeTime = xTaskGetTickCount();
+
+  while (true) {
+
+
+    sendGPS();
+
+    sendIMU_ADC(0x7F0, 0x7F3, 0x7F4);
+    
+
+    //Delay to yield to other tasks
+    //vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    vTaskDelay(50 / portTICK_PERIOD_MS);
   }
 }
 
@@ -487,6 +523,7 @@ void IMU__ADC_Code(void *parameter) {
       GzAVG = alpha * gyroZ + (1 - alpha) * GzAVG;
 
       adc0 = readChannel(ADS1115_COMP_0_GND);
+      //Serial.println(adc0);
       // adc1 = readChannel(ADS1115_COMP_1_GND);
       // adc2 = readChannel(ADS1115_COMP_2_GND);
       // adc3 = readChannel(ADS1115_COMP_3_GND);
@@ -500,7 +537,8 @@ void IMU__ADC_Code(void *parameter) {
       //Serial.println(configTICK_RATE_HZ);
       xSemaphoreGive(i2cMutex);
     }
-    vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    //vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    vTaskDelay(5 / portTICK_PERIOD_MS);
   }
 }
 
@@ -536,7 +574,7 @@ void GPS_CODE(void *parameter) {
         fixType = myGNSS.getFixType();
         getFixOK = myGNSS.getGnssFixOk();
 
-        //Serial.println(hour);
+        //Serial.println(latitude);
 
         //Conversion of variables to decimal place of Motec requirements
         altitude = altitude / 10;
@@ -608,7 +646,8 @@ void GPS_CODE(void *parameter) {
       }
       xSemaphoreGive(i2cMutex);
     }
-    vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    //vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    vTaskDelay(5 / portTICK_PERIOD_MS);
   }
 }
 
@@ -629,6 +668,7 @@ void sendIMU_ADC(int frameID, int frameID2, int frameID3) {
   IMUframe1.data[6] = (GxAVG >> 8) & 0xFF;
   IMUframe1.data[7] = GxAVG & 0xFF;
   ESP32Can.writeFrame(IMUframe1);
+  delay(1);
 
   //Second CAN frame that sends the rest of the gyroscope data (Y and Z)
   //Sends first two ADC values from AD1115 (Not voltage divider ADC)
@@ -645,6 +685,7 @@ void sendIMU_ADC(int frameID, int frameID2, int frameID3) {
   IMU_ADC_Frame1.data[6] = (adc1 >> 8) & 0xFF;
   IMU_ADC_Frame1.data[7] = adc1 & 0xFF;
   ESP32Can.writeFrame(IMU_ADC_Frame1);
+  delay(1);
 
   //Third CAN frame that sends rest of ADS1115 ADC data
   //Sends data from voltage divider ADCS
@@ -661,11 +702,18 @@ void sendIMU_ADC(int frameID, int frameID2, int frameID3) {
   ADCFrame.data[6] = (adc_12v_2 >> 8) & 0xFF;
   ADCFrame.data[7] = adc_12v_2 & 0xFF;
   ESP32Can.writeFrame(ADCFrame);
+  delay(1);
 }
 
 void sendGPS() {
 
-  Serial.println("Send GPS");
+  //Serial.println("Send GPS");
+  //Serial.println(latitude);
+
+  Serial.println(GPSCOUNT);
+  latitude = GPSCOUNT;
+  GPSCOUNT++;
+  
 
   //Main CAN frame, containts latitiude and longitude
   //Does 4 byte 32 bit shift thing across for the 4 byte long messages that Motec requires
@@ -682,6 +730,8 @@ void sendGPS() {
   gpsFrame0.data[6] = (longitude >> 8) & 0xFF;
   gpsFrame0.data[7] = (longitude >> 0) & 0xFF;
   ESP32Can.writeFrame(gpsFrame0);
+  //vTaskDelay(2 / portTICK_PERIOD_MS);
+
 
   //Time Frame, sent over 4 bytes in UTC time
   //Ground speed and altitude across 2 bytes
@@ -698,6 +748,8 @@ void sendGPS() {
   gpsFrame1.data[6] = (altitude >> 8) & 0xFF;
   gpsFrame1.data[7] = (altitude >> 0) & 0xFF;
   ESP32Can.writeFrame(gpsFrame1);
+  //vTaskDelay(2 / portTICK_PERIOD_MS);
+
 
   //Date sent over 3 bytes
   //Valid position value sent over 1 byte
@@ -716,6 +768,8 @@ void sendGPS() {
   gpsFrame2.data[6] = HDOP;
   gpsFrame2.data[7] = SIV;
   ESP32Can.writeFrame(gpsFrame2);
+  //vTaskDelay(2 / portTICK_PERIOD_MS);
+
 
   //Valid position only gets sent on this frame
   //AFAIK we don't have the functions to get the other items
@@ -724,17 +778,18 @@ void sendGPS() {
   gpsFrame3.identifier = 0x683;
   gpsFrame3.extd = 0;
   gpsFrame3.data_length_code = 8;
-  gpsFrame3.data[0] = 0;
-  gpsFrame3.data[1] = 0;
-  gpsFrame3.data[2] = 0;
-  gpsFrame3.data[3] = 0;
+  gpsFrame3.data[0] = 0xAA;
+  gpsFrame3.data[1] = 0xAA;
+  gpsFrame3.data[2] = 0xAA;
+  gpsFrame3.data[3] = 0xAA;
   gpsFrame3.data[4] = validPosition;
   gpsFrame3.data[5] = validPosition;
-  gpsFrame3.data[6] = 0;
-  gpsFrame3.data[7] = 0;
+  gpsFrame3.data[6] = 0xAA;
+  gpsFrame3.data[7] = 0xAA;
 
   //Writes/sends frames to CAN bus
   ESP32Can.writeFrame(gpsFrame3);
+  //vTaskDelay(2 / portTICK_PERIOD_MS);
 }
 
 float readChannel(ADS1115_MUX channel) {
